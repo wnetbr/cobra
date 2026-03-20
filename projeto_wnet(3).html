@@ -1,0 +1,360 @@
+<!DOCTYPE html><html><head><style></style></head><body>
+
+
+<meta charset="UTF-8">
+<title>Snake Hunter PRO HD</title>
+
+<style>
+body { margin:0; overflow:hidden; background:#000; cursor:crosshair; font-family:sans-serif; }
+
+#ui {
+    position:absolute; top:20px; left:20px;
+    color:#fff; background:rgba(0,0,0,0.6);
+    padding:15px; border-left:4px solid #00ff88;
+}
+#score { font-size:28px; color:#00ff88; }
+
+#crosshair {
+    position:absolute; top:50%; left:50%;
+    width:20px; height:20px; margin:-10px;
+    border:1px solid rgba(255,255,255,0.5);
+    border-radius:50%;
+}
+
+#weapon {
+    position:absolute; bottom:0; right:5%;
+    width:350px;
+    pointer-events:none;
+    transition:transform 0.05s;
+}
+#weapon.recoil { transform:translateY(-25px) rotate(-8deg); }
+</style>
+
+
+
+
+<div id="ui">
+    COBRAS ELIMINADAS
+    <div id="score">0</div>
+</div>
+
+<div id="crosshair"></div>
+<img id="weapon" src="https://contemporary-rose-hshklevi0i.edgeone.app/ARMA-removebg-preview.png">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+// ===== CENA =====
+const scene = new THREE.Scene();
+
+// Céu com gradiente
+const skyGeo = new THREE.SphereGeometry(500, 32, 32);
+const skyMat = new THREE.MeshBasicMaterial({
+    color: 0x87ceeb,
+    side: THREE.BackSide
+});
+const sky = new THREE.Mesh(skyGeo, skyMat);
+scene.add(sky);
+
+// ===== CAMERA =====
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+camera.position.set(0,1.6,5);
+
+// ===== RENDER =====
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.6;
+document.body.appendChild(renderer.domElement);
+
+// ===== LUZ =====
+const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+sun.position.set(20,50,10);
+sun.castShadow = true;
+scene.add(sun);
+
+scene.add(new THREE.AmbientLight(0x404040));
+
+// ===== CHÃO TEXTURIZADO =====
+const tex = new THREE.TextureLoader().load('https://threejs.org/examples/textures/terrain/grasslight-big.jpg');
+tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+tex.repeat.set(40,40);
+
+const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshStandardMaterial({ map:tex })
+);
+floor.rotation.x = -Math.PI/2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// ===== ÁRVORES =====
+function tree(x,z){
+    const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.3,0.5,4),
+        new THREE.MeshStandardMaterial({color:0x5a3d1a})
+    );
+    const leaf = new THREE.Mesh(
+        new THREE.ConeGeometry(2,5,8),
+        new THREE.MeshStandardMaterial({color:0x1f5f1f})
+    );
+    trunk.position.set(x,2,z);
+    leaf.position.set(x,6,z);
+    scene.add(trunk,leaf);
+}
+for(let i=0;i<40;i++) tree(Math.random()*80-40,Math.random()*80-40);
+
+// ===== COBRA =====
+const segments = [];
+for(let i=0;i<15;i++){
+    const seg = new THREE.Mesh(
+        new THREE.SphereGeometry(0.4-i*0.02,12,12),
+        new THREE.MeshStandardMaterial({color: i==0?0x000000:0x1a4a1a, roughness:0.3})
+    );
+    seg.castShadow = true;
+    segments.push(seg);
+    scene.add(seg);
+}
+
+function resetSnake(){
+    let x = Math.random()*40-20;
+    let z = Math.random()*40-20;
+    segments.forEach((s,i)=> s.position.set(x,0.3,z+i*0.4));
+}
+resetSnake();
+
+// ===== CONTROLES =====
+let yaw=0,pitch=0,keys={},kills=0;
+const raycaster = new THREE.Raycaster();
+
+document.addEventListener('keydown',e=>keys[e.code]=true);
+document.addEventListener('keyup',e=>keys[e.code]=false);
+
+// TIRO + FLASH
+const flash = new THREE.PointLight(0xffaa55,2,5);
+camera.add(flash);
+scene.add(camera);
+
+document.body.onclick=()=>{
+    if(!document.pointerLockElement){
+        document.body.requestPointerLock();
+        return;
+    }
+
+    // recoil
+    const w = document.getElementById("weapon");
+    w.classList.add("recoil");
+    setTimeout(()=>w.classList.remove("recoil"),50);
+
+    flash.intensity=2;
+    setTimeout(()=>flash.intensity=0,40);
+
+    raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
+    if(raycaster.intersectObjects(segments).length>0){
+        kills++;
+        score.innerText = kills;
+        resetSnake();
+        if(kills>=10){
+            alert("VOCÊ LIMPOU O NINHO!");
+            location.reload();
+        }
+    }
+};
+
+// MOUSE LOOK
+document.addEventListener('mousemove',e=>{
+    if(document.pointerLockElement){
+        yaw -= e.movementX*0.002;
+        pitch -= e.movementY*0.002;
+        pitch = Math.max(-1.5, Math.min(1.5,pitch));
+    }
+});
+
+// ===== LOOP =====
+function animate(){
+    requestAnimationFrame(animate);
+
+    // movimento
+    let speed=0.12;
+    if(keys["ArrowUp"]){
+        camera.position.x -= Math.sin(yaw)*speed;
+        camera.position.z -= Math.cos(yaw)*speed;
+    }
+    if(keys["ArrowDown"]){
+        camera.position.x += Math.sin(yaw)*speed;
+        camera.position.z += Math.cos(yaw)*speed;
+    }
+
+    camera.rotation.set(pitch,yaw,0,'YXZ');
+
+    // IA cobra
+    let head = segments[0];
+    let dir = new THREE.Vector3().subVectors(camera.position, head.position).normalize();
+
+    let wave = Math.sin(Date.now()*0.006)*0.3;
+    let side = new THREE.Vector3(-dir.z,0,dir.x);
+
+    head.position.add(dir.multiplyScalar(0.08));
+    head.position.add(side.multiplyScalar(wave));
+    head.lookAt(camera.position);
+
+    for(let i=1;i<segments.length;i++){
+        let s=segments[i], p=segments[i-1];
+        let d=s.position.distanceTo(p.position);
+        if(d>0.4){
+            s.position.add(new THREE.Vector3().subVectors(p.position,s.position).normalize().multiplyScalar(d-0.4));
+        }
+    }
+
+    if(head.position.distanceTo(camera.position)<1.5){
+        alert("GAME OVER");
+        location.reload();
+    }
+
+    renderer.render(scene,camera);
+}
+animate();
+
+onresize=()=>{
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+};
+</script>
+
+
+<script></script><script>// ===== MELHORIAS =====
+
+// GRAVIDADE/ALTURA FIXA DA COBRA (colada no chão)
+function fixSnakeToGround(){
+    segments.forEach(s=>{
+        s.position.y = 0.3;
+    });
+}
+
+// PARTÍCULAS DE IMPACTO
+function spawnParticles(pos){
+    for(let i=0;i<15;i++){
+        const p = new THREE.Mesh(
+            new THREE.SphereGeometry(0.05,6,6),
+            new THREE.MeshBasicMaterial({color:0xffaa00})
+        );
+        p.position.copy(pos);
+        scene.add(p);
+
+        let vel = new THREE.Vector3(
+            (Math.random()-0.5)*0.3,
+            Math.random()*0.3,
+            (Math.random()-0.5)*0.3
+        );
+
+        let life = 30;
+        function anim(){
+            if(life--<=0){ scene.remove(p); return; }
+            p.position.add(vel);
+            vel.y -= 0.01;
+            requestAnimationFrame(anim);
+        }
+        anim();
+    }
+}
+
+// CAMERA SHAKE
+function shakeCamera(){
+    let t = 5;
+    function shake(){
+        if(t--<=0) return;
+        camera.position.x += (Math.random()-0.5)*0.1;
+        camera.position.y += (Math.random()-0.5)*0.05;
+        requestAnimationFrame(shake);
+    }
+    shake();
+}
+
+// CENTRALIZAR ARMA
+const weapon = document.getElementById("weapon");
+weapon.style.left = "50%";
+weapon.style.right = "auto";
+weapon.style.transform = "translateX(-50%)";
+
+// ANIMAÇÃO SUAVE DA ARMA
+let weaponTime = 0;
+function animateWeapon(){
+    weaponTime += 0.05;
+    let idle = Math.sin(weaponTime)*5;
+    weapon.style.transform = `translateX(-50%) translateY(${idle}px)`;
+}
+
+// STRAFE (movimento lateral)
+const originalAnimate = animate;
+animate = function(){
+    requestAnimationFrame(animate);
+
+    let speed=0.12;
+
+    // frente/trás (já existente)
+    if(keys["ArrowUp"]){
+        camera.position.x -= Math.sin(yaw)*speed;
+        camera.position.z -= Math.cos(yaw)*speed;
+    }
+    if(keys["ArrowDown"]){
+        camera.position.x += Math.sin(yaw)*speed;
+        camera.position.z += Math.cos(yaw)*speed;
+    }
+
+    // NOVO: STRAFE
+    if(keys["ArrowLeft"]){
+        camera.position.x -= Math.cos(yaw)*speed;
+        camera.position.z += Math.sin(yaw)*speed;
+    }
+    if(keys["ArrowRight"]){
+        camera.position.x += Math.cos(yaw)*speed;
+        camera.position.z -= Math.sin(yaw)*speed;
+    }
+
+    camera.rotation.set(pitch,yaw,0,'YXZ');
+
+    // IA COBRA (melhorada no chão)
+    let head = segments[0];
+    let dir = new THREE.Vector3().subVectors(camera.position, head.position).normalize();
+
+    let wave = Math.sin(Date.now()*0.006)*0.3;
+    let side = new THREE.Vector3(-dir.z,0,dir.x);
+
+    head.position.add(dir.multiplyScalar(0.08));
+    head.position.add(side.multiplyScalar(wave));
+    head.lookAt(camera.position);
+
+    for(let i=1;i<segments.length;i++){
+        let s=segments[i], p=segments[i-1];
+        let d=s.position.distanceTo(p.position);
+        if(d>0.4){
+            s.position.add(new THREE.Vector3().subVectors(p.position,s.position).normalize().multiplyScalar(d-0.4));
+        }
+    }
+
+    fixSnakeToGround();
+
+    if(head.position.distanceTo(camera.position)<1.5){
+        alert("GAME OVER");
+        location.reload();
+    }
+
+    animateWeapon();
+    renderer.render(scene,camera);
+};
+
+// MELHORAR TIRO
+document.body.addEventListener("click",()=>{
+    if(document.pointerLockElement){
+        shakeCamera();
+
+        raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
+        let hit = raycaster.intersectObjects(segments);
+
+        if(hit.length>0){
+            spawnParticles(hit[0].point);
+        }
+    }
+});</script><script></script></body></html>
